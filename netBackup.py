@@ -70,8 +70,9 @@ def connect(device, model, user, password):
         session = login.brocade(session, user, password)
     elif model == "redback":
         session = login.redback(session, user, password)
+    elif model == "mikrotik":
+        session = login.mikrotik(session, user+"+c", password)
     return session
-
 
 def getCommands(model):
     if model == "brocade":
@@ -80,15 +81,27 @@ def getCommands(model):
     elif model == "redback":
         command_file_fd = open("library/rcommand", "r")
         commands = command_file_fd.read().split('\n')
+    elif model == "mikrotik":
+        command_file_fd = open("library/mkcommand", "r")
+        commands = command_file_fd.read().split('\n')
     return commands
 
 
-def sendCommands(session, commands):
+def sendCommands(session, commands, model):
     # Recursively send commands
     print("Backuping configuration")
-    for command in commands:
-        session.send(command + ret_char)
-        session.expect('#$')
+    if model == "brocade":
+        for command in commands:
+            session.send(command + ret_char)
+            session.expect('#$')
+    if model == "redback":
+        for command in commands:
+            session.send(command + ret_char)
+            session.expect('#$')
+    elif model == "mikrotik":
+        for command in commands:
+            session.send(command + ret_char)
+            session.expect('> $')
     return session
 
 
@@ -97,23 +110,37 @@ def findStartStop(model):
         start, stop = startStop.brocade()
     elif model == "redback":
         start, stop = startStop.redback()
+    elif model == "mikrotik":
+        start, stop = startStop.mikrotik()
     return start, stop
 
 
-def cleanFile(src, dst, start, stop):
-    for line in src:
-        match = re.match(start, line)
-        if match:
-            dst.write(line)
-            break
-    for line in src:
-        match = re.match(stop, line)
-        if match:
-            dst.write(line)
-            break
-        else:
-            dst.write(line)
-
+def cleanFile(src, dst, start, stop, model):
+    if model == "mikrotik":
+        for line in src:
+            match = re.match(start, line)
+            if match:
+                dst.write(line)
+                break
+        for line in src:
+            match = re.match(stop, line)
+            if match:
+                break
+            else:
+                dst.write(line)
+    else :
+        for line in src:
+            match = re.match(start, line)
+            if match:
+                dst.write(line)
+                break
+        for line in src:
+            match = re.match(stop, line)
+            if match:
+                dst.write(line)
+                break
+            else:
+                dst.write(line)
 
 def disconnect(session):
     # Terminate the telnet session, the hard way.
@@ -139,21 +166,27 @@ def main():
             f = open(ftemp, "x")
         # Choose credential in those provided
         credentials = chooseCredentials(d, loadCredentials)
+        #print("1")
         # Connect to the device
         session = connect(d, m, credentials[0], credentials[1])
+        #print("2")
         # Start logiing session in file f
         session.logfile_read = f
+        #print("3")
         # Select commands for a model of device
         commands = getCommands(m)
+        #print("4")
         # Send command to the device
-        session = sendCommands(session, commands)
+        session = sendCommands(session, commands, m)
+        #print("5")
         disconnect(session)
         f.close()
+        #print("6")
 
         start, stop = findStartStop(m)
         src = open(ftemp, "r")
         dst = open(fname, "w")
-        cleanFile(src, dst, start, stop)
+        cleanFile(src, dst, start, stop, m)
         src.close()
         dst.close()
         os.remove(fname+".new")

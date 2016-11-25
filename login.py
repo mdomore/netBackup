@@ -17,6 +17,13 @@ def brocade(session, user, password):
 def cisco(session, user, password):
     return session
 
+def mikrotik(session, user, password):
+    session.expect('Login: $')
+    session.send(user + ret_char)
+    session.expect('Password: $')
+    session.send(password + ret_char)
+    session.expect('> $')
+    return session
 
 def redback(session, user, password):
     session.expect('login: $')
