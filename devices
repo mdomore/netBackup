@@ -1,7 +1,9 @@
 ##############################################################
 #
-#            Enter the name of the device and the type
-#            Ex:      switch:brocade
-#            Actual type supported brocade, redback
+#            Enter the name of the device, the type and protocol
+#  	     For ssh connection you can add options after :option:value
+#            Ex:      switch:brocade:telnet
+#            Ex:      ro1:redback:ssh:HostkeyAlgorithms:+ssh-dss
+#            Actual type supported brocade, redback, arista
 #
 #############################################################
