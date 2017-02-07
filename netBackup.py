@@ -14,9 +14,11 @@ import re
 import startStop
 import login
 from time import sleep
+from pexpect import pxssh
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-d", "--directory", dest="rancid_dir", required=True)
+parser.add_argument("-v", "--verbose", action="store_true", required=False)
 args = parser.parse_args()
 
 # Set variables
@@ -61,48 +63,48 @@ def chooseCredentials(device, credentials):
     return cred
 
 
-def connect(device, model, user, password):
-    # Spawn connection to the device
-    print("Connecting to "+device)
-    session = pexpect.spawnu('telnet', [device])
-    session.delaybeforesend = 0.5  # sleep before every send().
-    if model == "brocade":
-        session = login.brocade(session, user, password)
-    elif model == "redback":
-        session = login.redback(session, user, password)
-    elif model == "mikrotik":
-        session = login.mikrotik(session, user+"+c", password)
-    return session
+def connect(device, model, proto, optiontype, optionvalue, user, password):
+    if proto == "telnet":
+        # Spawn telnet connection to the device
+        session = pexpect.spawnu('telnet', [device])
+        session.delaybeforesend = 0.5  # sleep before every send().
+        if model == "brocade":
+            session = login.brocade(session, user, password)
+        elif model == "redback":
+            session = login.redback(session, user, password)
+        return session
+    elif proto == "ssh":
+        # Spanw ssh connection to the device
+        try:
+            session = pxssh.pxssh(options={optiontype:optionvalue},encoding="utf-8")
+            session.login(device, user, password, auto_prompt_reset=False)
+            session.PROMPT = "#$"
+            session.prompt()
+            #print(session.before)
+            return session
+        except pxssh.ExceptionPxssh as e:
+            print("pxssh failed on login.")
+            print(e)
 
 def getCommands(model):
-    if model == "brocade":
-        command_file_fd = open("library/bcommand", "r")
-        commands = command_file_fd.read().split('\n')
-    elif model == "redback":
-        command_file_fd = open("library/rcommand", "r")
-        commands = command_file_fd.read().split('\n')
-    elif model == "mikrotik":
-        command_file_fd = open("library/mkcommand", "r")
-        commands = command_file_fd.read().split('\n')
+    command_file_fd = open("library/"+model+"command", "r")
+    commands = command_file_fd.read().split('\n')
     return commands
 
 
-def sendCommands(session, commands, model):
+def sendCommands(session, commands, model, proto):
     # Recursively send commands
-    print("Backuping configuration")
-    if model == "brocade":
+    if proto == "telnet":
         for command in commands:
             session.send(command + ret_char)
             session.expect('#$')
-    if model == "redback":
+        return session
+    if proto == "ssh":
         for command in commands:
-            session.send(command + ret_char)
-            session.expect('#$')
-    elif model == "mikrotik":
-        for command in commands:
-            session.send(command + ret_char)
-            session.expect('> $')
-    return session
+            session.sendline(command)
+            session.prompt()
+        return session
+
 
 
 def findStartStop(model):
@@ -110,37 +112,24 @@ def findStartStop(model):
         start, stop = startStop.brocade()
     elif model == "redback":
         start, stop = startStop.redback()
-    elif model == "mikrotik":
-        start, stop = startStop.mikrotik()
+    elif model == "arista":
+        start, stop = startStop.arista()
     return start, stop
 
 
 def cleanFile(src, dst, start, stop, model):
-    if model == "mikrotik":
-        for line in src:
-            match = re.match(start, line)
-            if match:
-                dst.write(line)
-                break
-        for line in src:
-            match = re.match(stop, line)
-            if match:
-                break
-            else:
-                dst.write(line)
-    else :
-        for line in src:
-            match = re.match(start, line)
-            if match:
-                dst.write(line)
-                break
-        for line in src:
-            match = re.match(stop, line)
-            if match:
-                dst.write(line)
-                break
-            else:
-                dst.write(line)
+    for line in src:
+        match = re.match(start, line)
+        if match:
+            dst.write(line)
+            break
+    for line in src:
+        match = re.match(stop, line)
+        if match:
+            dst.write(line)
+            break
+        else:
+            dst.write(line)
 
 def disconnect(session):
     # Terminate the telnet session, the hard way.
@@ -156,8 +145,17 @@ def main():
 
     # Main loop
     for device in [d for d in devices if d]:  # Filter out empty lines
-        d = device[0]
-        m = device[1]
+        d = device[0]  #device name
+        m = device[1]  #device model
+        proto = device[2]  #protocol to connect to the device telnet or ssh
+        if device[3] in device:
+            optiontype = device[3] #ssh option typ HostkeyAlgorithms,KexAlgorithms ...
+        else:
+            optiontype = " "
+        if device[4] in device:
+            optionvalue = device[4] #ssh option value +ssh-dss, +diffie-hellman-group1-sha1 ...
+        else:
+            optionvalue = " "
         ftemp = rancid_dir+d+".new"
         fname = rancid_dir+d
         if os.path.isfile(ftemp):
@@ -166,29 +164,46 @@ def main():
             f = open(ftemp, "x")
         # Choose credential in those provided
         credentials = chooseCredentials(d, loadCredentials)
-        #print("1")
+        if args.verbose:
+            print(">>> DEBUG CONNECT TO "+d) #debug
         # Connect to the device
-        session = connect(d, m, credentials[0], credentials[1])
-        #print("2")
-        # Start logiing session in file f
+        session = connect(d, m, proto, optiontype, optionvalue, credentials[0], credentials[1])
+        if args.verbose:
+            print(">>> DEBUG OPEN LOGING FILE") #debug
+        # Start loging session in file f
         session.logfile_read = f
-        #print("3")
+        #session.logfile_read = sys.stdout
+        if args.verbose:
+            print(">>> DEBUG SELECT COMMAND") #debug
         # Select commands for a model of device
         commands = getCommands(m)
-        #print("4")
+        if args.verbose:
+            print(">>> DEBUG SEND COMMAND") #debug
         # Send command to the device
-        session = sendCommands(session, commands, m)
-        #print("5")
+        session = sendCommands(session, commands, m, proto)
+        if args.verbose:
+            print(">>> DEBUG CLOSE SESSION") #debug
         disconnect(session)
         f.close()
-        #print("6")
+        if args.verbose:
+            print(">>> DEBUG CLOSE FILE") #debug
 
+        if args.verbose:
+            print(">>> DEBUG GET START STOP TAG")#debug
         start, stop = findStartStop(m)
+        if args.verbose:
+            print(">>> DEBUG OPEN FILES")#debug
         src = open(ftemp, "r")
         dst = open(fname, "w")
+        if args.verbose:
+            print(">>> DEBUG CLEAN FILE")#debug
         cleanFile(src, dst, start, stop, m)
+        if args.verbose:
+            print(">>> DEBUG CLOSE FILES")#debug
         src.close()
         dst.close()
+        if args.verbose:
+            print(">>> DEBUG REMOVE .NEW FILE")#debug
         os.remove(fname+".new")
 
 if __name__ == '__main__':

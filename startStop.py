@@ -1,4 +1,6 @@
 def arista():
+    start = "^! Command: show running-config$"
+    stop = "^end$"
     return start, stop
 
 
