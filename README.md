@@ -1,6 +1,6 @@
 # netBackup
 python alternative to rancid
 
-capable of backup cisco, redback, mikrotik via telnet
+capable of backup cisco, redback, mikrotik via telnet and ssh
 
-working on ssh connection
+need to speed up the process
