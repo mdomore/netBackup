@@ -1,0 +1,8 @@
+<hostname>:<brand>:<protocol>:<options>
+host:redback:ssh:HostkeyAlgorithms:+ssh-dss
+host:arista:ssh::
+host:brocade:ssh:KexAlgorithms:+diffie-hellman-group1-sha1
+host4:cisco:ssh::
+host5:juniper:ssh::
+host6:fs:ssh::
+
